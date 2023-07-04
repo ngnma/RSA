@@ -1,0 +1,175 @@
+ipblock myarm{
+    iptype "armsystem";
+    ipparm "exec=rsa";
+    ipparm "period=1";
+}
+
+ipblock arm_gcd_in_1(out data : ns(64)){
+    iptype "armsystemsource";
+    ipparm "core=myarm";
+    ipparm "address=0x80000000";
+}
+
+ipblock arm_gcd_in_2(out data : ns(64)){
+    iptype "armsystemsource";
+    ipparm "core=myarm";
+    ipparm "address=0x80000008";
+}
+
+ipblock arm_gcd_load(out data : ns(1)){
+    iptype "armsystemsource";
+    ipparm "core=myarm";
+    ipparm "address=0x80000018";
+}
+
+ipblock arm_gcd_out(in data : ns(64)){
+    iptype "armsystemsink";
+    ipparm "core=myarm";
+    ipparm "address=0x80000010";
+}
+
+ipblock arm_gcd_done(in data : ns(1)){
+    iptype "armsystemsink";
+    ipparm "core=myarm";
+    ipparm "address=0x8000001c";
+}
+
+ipblock arm_power_x(out data : ns(64)){
+    iptype "armsystemsource";
+    ipparm "core=myarm";
+    ipparm "address=0x80000020";
+}
+
+ipblock arm_power_y(out data : ns(64)){
+    iptype "armsystemsource";
+    ipparm "core=myarm";
+    ipparm "address=0x80000028";
+}
+
+ipblock arm_power_m(out data : ns(64)){
+    iptype "armsystemsource";
+    ipparm "core=myarm";
+    ipparm "address=0x80000030";
+}
+
+ipblock arm_power_out(in data : ns(64)){
+    iptype "armsystemsink";
+    ipparm "core=myarm";
+    ipparm "address=0x80000038";
+}
+
+ipblock arm_power_load(out data : ns(1)){
+    iptype "armsystemsource";
+    ipparm "core=myarm";
+    ipparm "address=0x80000040";
+}
+
+ipblock arm_power_done(in data : ns(1)){
+    iptype "armsystemsink";
+    ipparm "core=myarm";
+    ipparm "address=0x80000044";
+}
+
+
+dp gcd_dp(
+    in  inp1   :   ns(64);
+    in  inp2   :   ns(64);
+    in  load:   ns(1);
+    out outp   :   ns(64);
+    out done:   ns(1)
+) {
+    reg a, b: ns(64);
+    always { outp = b; }
+    sfg ready { done = 0; }
+    sfg init {
+        a = inp1;
+        b = inp2;
+        done = 0;
+    }
+    sfg calculate {
+        a = b;
+        b = a%b;
+        done = 0;
+    }
+    sfg idle { done = 1; }
+}
+
+fsm gcd_fsm(gcd_dp) {
+    initial s0;
+    state s1, s2;
+    @s0 
+        if (load) then (init) -> s1;
+        else (ready) -> s0;
+    @s1 
+        if (a%b==0) then (idle) -> s2;
+        else (calculate ) -> s1;
+    @s2 if (load) then (idle) -> s2;
+        else (ready) -> s0;
+}
+
+
+dp power_dp (
+    in  x   :   ns(64);
+    in  y   :   ns(64);
+    in  m   :   ns(64);
+    in  load:   ns(1);
+    out outp   :   ns(64);
+    out done:   ns(1)
+){
+    reg temp, counter: ns(64);
+    always { outp = temp; }
+    sfg ready { done = 0; }
+    sfg init {
+        temp = 1;
+        counter = y;
+        done = 0;
+    }
+    sfg calculate {
+        temp = (temp * x) % m;
+        counter = counter - 1;
+        done = 0;
+    }
+    sfg idle { done = 1; } 
+}
+
+fsm power_fsm(power_dp) {
+    initial s0;
+    state s1, s2;
+
+    @s0 
+        if (load) then (init) -> s1;
+        else (ready) -> s0;
+    @s1 
+        if (counter==0) then (idle) -> s2;
+        else (calculate) -> s1;
+    @s2 if (load) then (idle) -> s2;
+        else (ready) -> s0;
+}
+
+dp top() {
+    sig gcd_inp1, gcd_inp2 ,gcd_outp : ns(64);
+    sig gcd_load, gcd_done : ns(1);
+    sig power_x, power_y, power_m, power_outp : ns(64);
+    sig power_load, power_done : ns(1);
+
+    use myarm;
+
+    use arm_gcd_in_1(gcd_inp1);
+    use arm_gcd_in_2(gcd_inp2);
+    use arm_gcd_out(gcd_outp);
+    use arm_gcd_load(gcd_load);
+    use arm_gcd_done(gcd_done);
+    use arm_power_x(power_x);
+    use arm_power_y(power_y);
+    use arm_power_m(power_m);
+    use arm_power_out(power_outp);
+    use arm_power_load(power_load);
+    use arm_power_done(power_done);
+
+    use gcd_dp(gcd_inp1, gcd_inp2, gcd_load, gcd_outp, gcd_done);
+    use power_dp(power_x, power_y, power_m, power_load, power_outp, power_done);
+}
+
+system S {
+    top;
+}
